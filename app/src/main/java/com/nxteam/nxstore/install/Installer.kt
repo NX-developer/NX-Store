@@ -55,7 +55,6 @@ object Installer {
             val params = PackageInstaller.SessionParams(
                 PackageInstaller.SessionParams.MODE_FULL_INSTALL
             )
-            params.setAppPackageName(packageName)
             val sessionId = installer.createSession(params)
             installer.openSession(sessionId).use { session ->
                 apk.inputStream().use { input ->

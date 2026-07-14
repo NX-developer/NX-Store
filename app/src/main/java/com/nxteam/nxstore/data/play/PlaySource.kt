@@ -18,6 +18,11 @@ object PlaySource {
     private val shortPriceRegex = Regex("^\\D{0,4}\\s?\\d[\\d.,]{0,12}\\s?\\D{0,4}$")
     private val youtubeRegex = Regex("https://www\\.youtube\\.com/embed/[A-Za-z0-9_-]{6,20}")
     private val playImageRegex = Regex("https://play-lh\\.googleusercontent\\.com/[A-Za-z0-9_\\-=/.]{20,}")
+    private val genericAlt = setOf(
+        "icon image", "thumbnail image", "screenshot image",
+        "cover art", "image", "app icon", "video thumbnail"
+    )
+    private val ratingLikeRegex = Regex("^\\d(?:[.,]\\d)?$")
 
     suspend fun search(query: String, limit: Int = 25): List<AppItem> = withContext(Dispatchers.IO) {
         val q = query.trim()
@@ -42,8 +47,7 @@ object PlaySource {
             if (pkg.isBlank() || out.containsKey(pkg)) continue
 
             val img = anchor.selectFirst("img")
-            val title = (img?.attr("alt")?.takeIf { it.isNotBlank() } ?: anchor.attr("aria-label")).trim()
-            if (title.isBlank()) continue
+            val title = extractTitle(anchor, img) ?: continue
 
             val icon = img?.let { it.absUrl("src").ifBlank { it.absUrl("data-src") } }.orEmpty()
             val scope: Element = anchor.parent() ?: anchor
@@ -132,6 +136,23 @@ object PlaySource {
         return hasCurrencyMark
     }
 
+    private fun extractTitle(anchor: Element, img: Element?): String? {
+        val candidates = ArrayList<String>()
+        anchor.attr("aria-label").trim().let { if (it.isNotBlank()) candidates.add(it) }
+        img?.attr("alt")?.trim()?.let { if (it.isNotBlank()) candidates.add(it) }
+        for (el in anchor.select("span, div")) {
+            val t = el.ownText().trim()
+            if (t.isNotBlank()) candidates.add(t)
+        }
+        return candidates.firstOrNull { c ->
+            c.length in 2..60 &&
+                c.lowercase() !in genericAlt &&
+                c.any { it.isLetter() } &&
+                !ratingLikeRegex.matches(c) &&
+                !isValidPriceLabel(c)
+        }
+    }
+
     private fun extractRating(html: String): Double? {
         val value = ratedRegex.find(html)?.groupValues?.get(1)?.toDoubleOrNull() ?: return null
         return if (value in 1.0..5.0) value else null
@@ -149,12 +170,15 @@ object PlaySource {
     private fun extractScreenshots(doc: Document, icon: String): List<String> {
         val urls = LinkedHashSet<String>()
         for (img in doc.select("img[src*=play-lh], img[data-src*=play-lh], img[srcset*=play-lh]")) {
+            val alt = img.attr("alt").trim().lowercase()
+            if (alt in genericAlt && alt != "screenshot image") continue
             val src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
-            if (src.isBlank()) continue
-            if (src == icon) continue
+            if (src.isBlank() || src == icon) continue
             val width = img.attr("width").toIntOrNull() ?: 0
             val height = img.attr("height").toIntOrNull() ?: 0
-            if (width in 1..200 && height in 1..200) continue
+            val bigEnough = (width == 0 && height == 0) || width > 200 || height > 200
+            val isScreenshot = alt == "screenshot image"
+            if (!isScreenshot && !bigEnough) continue
             urls.add(src)
         }
         return urls.take(12).toList()

@@ -88,7 +88,12 @@ object FDroidSource {
         val versionName = versionBlock?.selectFirst(".package-version-header a, .package-version-header")
             ?.text()?.trim()?.substringAfter("Version ")?.substringBefore(" ")?.trim().orEmpty()
 
-        val downloadUrl = doc.select("a[href$=.apk]").firstOrNull()?.absUrl("href")
+        val downloadUrl = doc.select("a[href$=.apk]")
+            .map { it.absUrl("href") }
+            .firstOrNull { href ->
+                val file = href.substringAfterLast('/').substringBefore('?')
+                file.startsWith("${pkg}_") || file.startsWith("$pkg-") || file == "$pkg.apk"
+            }
         val sizeText = versionBlock?.text().orEmpty()
         val sizeBytes = parseSize(sizeText)
 
