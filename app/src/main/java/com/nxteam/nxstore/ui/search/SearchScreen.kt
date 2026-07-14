@@ -55,7 +55,7 @@ fun SearchScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
-            placeholder = { Text("Search F-Droid, APKPure, Play") },
+            placeholder = { Text("Search all stores") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true
         )

@@ -2,6 +2,7 @@ package com.nxteam.nxstore.data
 
 import com.nxteam.nxstore.data.aptoide.AptoideSource
 import com.nxteam.nxstore.data.fdroid.FDroidSource
+import com.nxteam.nxstore.data.izzy.IzzySource
 import com.nxteam.nxstore.data.play.PlaySource
 import com.nxteam.nxstore.model.AppItem
 import com.nxteam.nxstore.model.SortMode
@@ -29,11 +30,12 @@ object AppRepository {
 
     suspend fun search(query: String): List<AppItem> = coroutineScope {
         val fdroid = async { runCatching { FDroidSource.search(query) }.getOrDefault(emptyList()) }
+        val izzy = async { runCatching { IzzySource.search(query) }.getOrDefault(emptyList()) }
         val aptoide = async { runCatching { AptoideSource.search(query) }.getOrDefault(emptyList()) }
         val play = async { runCatching { PlaySource.search(query) }.getOrDefault(emptyList()) }
 
         val merged = LinkedHashMap<String, AppItem>()
-        listOf(fdroid.await(), aptoide.await(), play.await()).forEach { list ->
+        listOf(fdroid.await(), izzy.await(), aptoide.await(), play.await()).forEach { list ->
             for (item in list) {
                 val existing = merged[item.packageName]
                 merged[item.packageName] = if (existing == null) item else combine(existing, item)
@@ -124,12 +126,14 @@ object AppRepository {
 
     private fun rank(source: Source): Int = when (source) {
         Source.FDROID -> 0
-        Source.APTOIDE -> 1
-        Source.PLAY -> 2
+        Source.IZZY -> 1
+        Source.APTOIDE -> 2
+        Source.PLAY -> 3
     }
 
     suspend fun details(item: AppItem): AppItem = when (item.source) {
         Source.FDROID -> FDroidSource.byPackage(item.packageName)?.let { combine(it, item) } ?: item
+        Source.IZZY -> IzzySource.details(item.packageName)?.let { combine(item, it) } ?: item
         Source.APTOIDE -> AptoideSource.resolveDownload(item)
         Source.PLAY -> PlaySource.details(item.packageName)?.let { combine(item, it) } ?: item
     }

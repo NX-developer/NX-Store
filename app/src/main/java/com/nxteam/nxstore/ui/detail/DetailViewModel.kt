@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.nxteam.nxstore.data.AppRepository
 import com.nxteam.nxstore.install.Installer
+import com.nxteam.nxstore.install.PackageState
 import com.nxteam.nxstore.model.AppItem
 import com.nxteam.nxstore.ui.NavSelection
 import com.nxteam.nxstore.ui.UiState
@@ -18,6 +19,7 @@ sealed interface InstallState {
     data class Downloading(val progress: Float) : InstallState
     data object Installing : InstallState
     data object AwaitingConfirm : InstallState
+    data class Installed(val versionName: String) : InstallState
     data class Failed(val message: String) : InstallState
 }
 
@@ -29,7 +31,31 @@ class DetailViewModel(app: Application) : AndroidViewModel(app) {
     private val _install = MutableStateFlow<InstallState>(InstallState.Idle)
     val install: StateFlow<InstallState> = _install.asStateFlow()
 
-    init { enrich() }
+    init {
+        enrich()
+        refreshInstalled()
+    }
+
+    fun refreshInstalled() {
+        val pkg = NavSelection.current?.packageName ?: return
+        val version = PackageState.installedVersion(getApplication(), pkg)
+        _install.value = when {
+            version != null -> InstallState.Installed(version)
+            _install.value is InstallState.Installed -> InstallState.Idle
+            _install.value is InstallState.AwaitingConfirm -> InstallState.Idle
+            else -> _install.value
+        }
+    }
+
+    fun open(packageName: String) {
+        if (!PackageState.open(getApplication(), packageName)) {
+            _install.value = InstallState.Failed("No launchable activity")
+        }
+    }
+
+    fun uninstall(packageName: String) {
+        PackageState.uninstall(getApplication(), packageName)
+    }
 
     private fun enrich() {
         val base = NavSelection.current

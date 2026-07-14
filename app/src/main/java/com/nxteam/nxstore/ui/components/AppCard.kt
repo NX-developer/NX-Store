@@ -38,6 +38,7 @@ import com.nxteam.nxstore.util.HtmlText
 fun SourceBadge(source: Source, modifier: Modifier = Modifier) {
     val color = when (source) {
         Source.FDROID -> Color(0xFF1976D2)
+        Source.IZZY -> Color(0xFF00897B)
         Source.APTOIDE -> Color(0xFFE8481C)
         Source.PLAY -> Color(0xFF6D4AFF)
     }

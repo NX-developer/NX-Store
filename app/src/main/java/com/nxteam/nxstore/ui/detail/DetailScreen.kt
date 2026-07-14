@@ -26,7 +26,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +55,15 @@ fun DetailScreen(
     val itemState by viewModel.item.collectAsStateWithLifecycle()
     val installState by viewModel.install.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.refreshInstalled()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     when (val s = itemState) {
         is UiState.Loading, UiState.Idle -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -105,6 +118,8 @@ fun DetailScreen(
                     app = app,
                     installState = installState,
                     onInstall = { viewModel.install(app) },
+                    onOpen = { viewModel.open(app.packageName) },
+                    onUninstall = { viewModel.uninstall(app.packageName) },
                     onOpenStore = {
                         runCatching {
                             context.startActivity(
@@ -180,8 +195,47 @@ private fun ActionButton(
     app: AppItem,
     installState: InstallState,
     onInstall: () -> Unit,
+    onOpen: () -> Unit,
+    onUninstall: () -> Unit,
     onOpenStore: () -> Unit
 ) {
+    if (installState is InstallState.Installed) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Button(
+                    onClick = onOpen,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Text("Open")
+                }
+                Button(
+                    onClick = onUninstall,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                ) {
+                    Text("Uninstall", color = MaterialTheme.colorScheme.onBackground)
+                }
+            }
+            if (installState.versionName.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Installed v${installState.versionName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        return
+    }
+
     when {
         app.isPaid || !app.installable -> {
             Button(
@@ -194,20 +248,46 @@ private fun ActionButton(
                 Text(label)
             }
         }
+
         else -> when (val st = installState) {
             is InstallState.Downloading -> Column(Modifier.fillMaxWidth()) {
                 LinearProgressIndicator(
                     progress = { st.progress },
-                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp),
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(6.dp))
-                Text("Downloading ${(st.progress * 100).toInt()}%", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Downloading ${(st.progress * 100).toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            InstallState.Installing -> Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("Installing…") }
-            InstallState.AwaitingConfirm -> Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text("Confirm the system prompt") }
-            is InstallState.Failed -> Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) { Text("Retry (${st.message})") }
-            InstallState.Idle -> Button(onClick = onInstall, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)) { Text("Install") }
+
+            InstallState.Installing -> Button(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Installing\u2026") }
+
+            InstallState.AwaitingConfirm -> Button(
+                onClick = {},
+                enabled = false,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Waiting for confirmation\u2026") }
+
+            is InstallState.Failed -> Button(
+                onClick = onInstall,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("Retry (${st.message})") }
+
+            else -> Button(
+                onClick = onInstall,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) { Text("Install") }
         }
     }
 }
