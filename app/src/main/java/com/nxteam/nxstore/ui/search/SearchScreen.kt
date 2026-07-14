@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nxteam.nxstore.model.AppItem
 import com.nxteam.nxstore.model.SortMode
+import com.nxteam.nxstore.model.Source
 import com.nxteam.nxstore.ui.UiState
 import com.nxteam.nxstore.ui.components.AppRow
 
@@ -40,6 +41,7 @@ fun SearchScreen(
 ) {
     val query by viewModel.query.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val sourceFilter by viewModel.sourceFilter.collectAsStateWithLifecycle()
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     Column(
@@ -70,6 +72,22 @@ fun SearchScreen(
                     selected = sort == mode,
                     onClick = { viewModel.onSortChange(mode) },
                     label = { Text(mode.label) }
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Source.entries.forEach { source ->
+                FilterChip(
+                    selected = sourceFilter == source,
+                    onClick = { viewModel.onSourceFilterChange(source) },
+                    label = { Text(source.label) }
                 )
             }
         }

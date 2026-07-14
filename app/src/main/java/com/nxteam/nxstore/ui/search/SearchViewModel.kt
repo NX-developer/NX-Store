@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.nxteam.nxstore.data.AppRepository
 import com.nxteam.nxstore.model.AppItem
 import com.nxteam.nxstore.model.SortMode
+import com.nxteam.nxstore.model.Source
 import com.nxteam.nxstore.ui.UiState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,6 +21,9 @@ class SearchViewModel : ViewModel() {
 
     private val _sort = MutableStateFlow(SortMode.RELEVANCE)
     val sort: StateFlow<SortMode> = _sort.asStateFlow()
+
+    private val _sourceFilter = MutableStateFlow<Source?>(null)
+    val sourceFilter: StateFlow<Source?> = _sourceFilter.asStateFlow()
 
     private val _state = MutableStateFlow<UiState<List<AppItem>>>(UiState.Idle)
     val state: StateFlow<UiState<List<AppItem>>> = _state.asStateFlow()
@@ -55,7 +59,14 @@ class SearchViewModel : ViewModel() {
         if (results.isNotEmpty()) emit()
     }
 
+    fun onSourceFilterChange(source: Source?) {
+        _sourceFilter.value = if (_sourceFilter.value == source) null else source
+        if (results.isNotEmpty()) emit()
+    }
+
     private fun emit() {
-        _state.value = UiState.Success(AppRepository.sort(results, _query.value, _sort.value))
+        val filter = _sourceFilter.value
+        val visible = if (filter == null) results else results.filter { it.source == filter }
+        _state.value = UiState.Success(AppRepository.sort(visible, _query.value, _sort.value))
     }
 }

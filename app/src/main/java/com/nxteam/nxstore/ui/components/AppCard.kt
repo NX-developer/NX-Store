@@ -32,6 +32,7 @@ import com.nxteam.nxstore.model.Source
 import com.nxteam.nxstore.ui.theme.NxFree
 import com.nxteam.nxstore.ui.theme.NxPaid
 import com.nxteam.nxstore.ui.theme.NxSurfaceVariant
+import com.nxteam.nxstore.util.HtmlText
 
 @Composable
 fun SourceBadge(source: Source, modifier: Modifier = Modifier) {
@@ -92,7 +93,7 @@ fun AppRow(item: AppItem, onClick: () -> Unit) {
             )
             if (item.summary.isNotBlank()) {
                 Text(
-                    text = item.summary,
+                    text = HtmlText.toPlain(item.summary),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,

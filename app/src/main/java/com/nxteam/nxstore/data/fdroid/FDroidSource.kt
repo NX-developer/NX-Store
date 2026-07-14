@@ -4,126 +4,127 @@ import com.nxteam.nxstore.model.AppItem
 import com.nxteam.nxstore.model.Source
 import com.nxteam.nxstore.network.Http
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 
 object FDroidSource {
-    private const val REPO = "https://f-droid.org/repo"
-    private const val INDEX_URL = "$REPO/index-v2.json"
+    private const val SITE = "https://f-droid.org"
+    private const val SEARCH = "https://search.f-droid.org"
 
-    private val json = Json { ignoreUnknownKeys = true }
-    private val mutex = Mutex()
-    @Volatile private var cache: List<AppItem>? = null
+    private val sizeRegex = Regex("([0-9]+(?:\\.[0-9]+)?)\\s*(KiB|MiB|GiB|KB|MB|GB)", RegexOption.IGNORE_CASE)
 
-    private fun localized(element: JsonElement?): String {
-        val obj = element as? JsonObject ?: return ""
-        val en = obj["en-US"] ?: obj["en"] ?: obj.values.firstOrNull()
-        return en?.jsonPrimitive?.contentOrNullSafe() ?: ""
+    suspend fun search(query: String, limit: Int = 30): List<AppItem> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isEmpty()) return@withContext emptyList()
+        val url = "$SEARCH/?q=" + java.net.URLEncoder.encode(q, "UTF-8") + "&lang=en"
+        val html = runCatching { Http.getString(url) }.getOrNull() ?: return@withContext emptyList()
+        parseList(Jsoup.parse(html, SEARCH), limit)
     }
 
-    private fun localizedIcon(element: JsonElement?): String {
-        val obj = element as? JsonObject ?: return ""
-        val entry = obj["en-US"] ?: obj["en"] ?: obj.values.firstOrNull()
-        val name = (entry as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNullSafe() ?: return ""
-        return REPO + name
+    suspend fun featured(limit: Int = 40): List<AppItem> = withContext(Dispatchers.IO) {
+        val html = runCatching { Http.getString("$SITE/en/packages/") }.getOrNull()
+            ?: return@withContext emptyList()
+        parseList(Jsoup.parse(html, SITE), limit)
     }
 
-    private fun localizedScreens(element: JsonElement?): List<String> {
-        val obj = element as? JsonObject ?: return emptyList()
-        val phone = obj["phone"] as? JsonObject ?: return emptyList()
-        val list = phone["en-US"] ?: phone["en"] ?: phone.values.firstOrNull()
-        val arr = list as? JsonArray ?: return emptyList()
-        return arr.mapNotNull { (it as? JsonObject)?.get("name")?.jsonPrimitive?.contentOrNullSafe() }
-            .map { REPO + it }
-    }
+    private fun parseList(doc: Document, limit: Int): List<AppItem> {
+        val out = LinkedHashMap<String, AppItem>()
+        for (link in doc.select("a[href*='/packages/']")) {
+            if (out.size >= limit) break
+            val pkg = extractPackage(link.attr("href")) ?: continue
+            if (out.containsKey(pkg)) continue
 
-    private fun JsonElement.contentOrNull(): String? =
-        try { this.jsonPrimitive.contentOrNullSafe() } catch (e: Exception) { null }
+            val name = (
+                link.selectFirst(".package-name, h4, h3")?.text()
+                    ?: link.selectFirst("img")?.attr("alt")
+                    ?: link.text()
+                ).orEmpty().trim().takeIf { it.isNotBlank() && it.length <= 80 } ?: continue
+            val summary = link.selectFirst(".package-summary, .package-desc")?.text()?.trim().orEmpty()
+            val icon = link.selectFirst("img")?.let { absImage(it) }.orEmpty()
 
-    private suspend fun load(): List<AppItem> {
-        cache?.let { return it }
-        return mutex.withLock {
-            cache?.let { return it }
-            val built = withContext(Dispatchers.IO) {
-                val raw = Http.getString(INDEX_URL)
-                val root = json.parseToJsonElement(raw).jsonObject
-                val packages = root["packages"]?.jsonObject ?: JsonObject(emptyMap())
-                packages.mapNotNull { (pkg, value) ->
-                    runCatching { parseApp(pkg, value.jsonObject) }.getOrNull()
-                }
-            }
-            cache = built
-            built
+            out[pkg] = AppItem(
+                packageName = pkg,
+                name = name,
+                summary = summary,
+                iconUrl = icon,
+                source = Source.FDROID,
+                storeUrl = "$SITE/en/packages/$pkg/"
+            )
         }
+        return out.values.toList()
     }
 
-    private fun parseApp(pkg: String, obj: JsonObject): AppItem? {
-        val meta = obj["metadata"]?.jsonObject ?: return null
-        val versions = obj["versions"]?.jsonObject ?: return null
+    private fun absImage(img: Element): String {
+        val src = img.absUrl("src").ifBlank { img.absUrl("data-src") }
+        return src
+    }
 
-        var bestCode = -1L
-        var downloadUrl: String? = null
-        var versionName = ""
-        var sizeBytes: Long? = null
-        for ((_, v) in versions) {
-            val vo = v.jsonObject
-            val manifest = vo["manifest"]?.jsonObject
-            val code = manifest?.get("versionCode")?.contentOrNull()?.toLongOrNull() ?: 0L
-            if (code >= bestCode) {
-                bestCode = code
-                val file = vo["file"]?.jsonObject
-                val name = file?.get("name")?.contentOrNull()
-                downloadUrl = if (name != null) REPO + name else null
-                versionName = manifest?.get("versionName")?.contentOrNull() ?: versionName
-                sizeBytes = file?.get("size")?.contentOrNull()?.toLongOrNull()
-            }
-        }
+    private fun extractPackage(href: String): String? {
+        val marker = "/packages/"
+        val start = href.indexOf(marker)
+        if (start < 0) return null
+        val rest = href.substring(start + marker.length).trim('/')
+        val candidate = rest.substringBefore('/').substringBefore('?').substringBefore('#')
+        if (candidate.isBlank()) return null
+        if (!candidate.contains('.')) return null
+        return if (candidate.matches(Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$"))) candidate else null
+    }
 
-        val name = localized(meta["name"]).ifBlank { pkg }
-        val categories = (meta["categories"] as? JsonArray)
-            ?.mapNotNull { it.contentOrNull() } ?: emptyList()
+    suspend fun byPackage(pkg: String): AppItem? = withContext(Dispatchers.IO) {
+        val url = "$SITE/en/packages/$pkg/"
+        val html = runCatching { Http.getString(url) }.getOrNull() ?: return@withContext null
+        val doc = Jsoup.parse(html, SITE)
 
-        return AppItem(
+        val name = doc.selectFirst("h3.package-name, .package-title h3, h3")?.text()?.trim()
+            ?: doc.selectFirst("meta[property=og:title]")?.attr("content").orEmpty().ifBlank { pkg }
+        val summary = doc.selectFirst(".package-summary")?.text()?.trim().orEmpty()
+        val descriptionHtml = doc.selectFirst(".package-description")?.html().orEmpty()
+        val icon = doc.selectFirst("img.package-icon")?.let { absImage(it) }
+            ?: doc.selectFirst("meta[property=og:image]")?.attr("content").orEmpty()
+
+        val versionBlock = doc.selectFirst(".package-version")
+        val versionName = versionBlock?.selectFirst(".package-version-header a, .package-version-header")
+            ?.text()?.trim()?.substringAfter("Version ")?.substringBefore(" ")?.trim().orEmpty()
+
+        val downloadUrl = doc.select("a[href$=.apk]").firstOrNull()?.absUrl("href")
+        val sizeText = versionBlock?.text().orEmpty()
+        val sizeBytes = parseSize(sizeText)
+
+        val screenshots = doc.select(".screenshot img, .package-screenshots img")
+            .mapNotNull { absImage(it).takeIf { url -> url.isNotBlank() } }
+            .take(12)
+
+        val category = doc.select("a[href*='/categories/']").firstOrNull()?.text()?.trim().orEmpty()
+
+        AppItem(
             packageName = pkg,
             name = name,
-            summary = localized(meta["summary"]),
-            description = localized(meta["description"]),
-            iconUrl = localizedIcon(meta["icon"]),
-            developer = meta["authorName"]?.contentOrNull() ?: "",
-            category = categories.firstOrNull() ?: "",
+            summary = summary,
+            description = descriptionHtml,
+            iconUrl = icon,
+            category = category,
             versionName = versionName,
             sizeBytes = sizeBytes,
             isPaid = false,
             source = Source.FDROID,
             downloadUrl = downloadUrl,
-            storeUrl = "https://f-droid.org/packages/$pkg/",
-            screenshots = localizedScreens(meta["screenshots"])
+            storeUrl = url,
+            screenshots = screenshots,
+            enriched = true
         )
     }
 
-    suspend fun featured(limit: Int = 60): List<AppItem> =
-        load().filter { it.iconUrl.isNotBlank() }.take(limit)
-
-    suspend fun search(query: String, limit: Int = 40): List<AppItem> {
-        val q = query.trim().lowercase()
-        if (q.isEmpty()) return emptyList()
-        return load().filter {
-            it.name.lowercase().contains(q) ||
-                it.summary.lowercase().contains(q) ||
-                it.packageName.lowercase().contains(q)
-        }.take(limit)
+    private fun parseSize(text: String): Long? {
+        val match = sizeRegex.find(text) ?: return null
+        val value = match.groupValues[1].toDoubleOrNull() ?: return null
+        val multiplier = when (match.groupValues[2].uppercase()) {
+            "KIB", "KB" -> 1024L
+            "MIB", "MB" -> 1024L * 1024
+            "GIB", "GB" -> 1024L * 1024 * 1024
+            else -> 1L
+        }
+        return (value * multiplier).toLong()
     }
-
-    suspend fun byPackage(pkg: String): AppItem? = load().firstOrNull { it.packageName == pkg }
 }
-
-private fun kotlinx.serialization.json.JsonPrimitive.contentOrNullSafe(): String? =
-    if (this is kotlinx.serialization.json.JsonNull) null else this.content

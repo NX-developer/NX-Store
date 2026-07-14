@@ -14,7 +14,18 @@ object AppRepository {
 
     private const val ENRICH_LIMIT = 15
 
-    suspend fun featured(): List<AppItem> = FDroidSource.featured()
+    data class HomeFeed(
+        val popular: List<AppItem>,
+        val openSource: List<AppItem>
+    ) {
+        val isEmpty: Boolean get() = popular.isEmpty() && openSource.isEmpty()
+    }
+
+    suspend fun home(): HomeFeed = coroutineScope {
+        val play = async { runCatching { PlaySource.topCharts() }.getOrDefault(emptyList()) }
+        val fdroid = async { runCatching { FDroidSource.featured() }.getOrDefault(emptyList()) }
+        HomeFeed(popular = play.await(), openSource = fdroid.await())
+    }
 
     suspend fun search(query: String): List<AppItem> = coroutineScope {
         val fdroid = async { runCatching { FDroidSource.search(query) }.getOrDefault(emptyList()) }
@@ -30,6 +41,9 @@ object AppRepository {
         }
         sort(merged.values.toList(), query, SortMode.RELEVANCE)
     }
+
+    suspend fun enrichHome(feed: HomeFeed): HomeFeed =
+        feed.copy(popular = enrich(feed.popular))
 
     suspend fun enrich(items: List<AppItem>): List<AppItem> = coroutineScope {
         val targets = items.take(ENRICH_LIMIT)

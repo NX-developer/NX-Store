@@ -41,6 +41,7 @@ import com.nxteam.nxstore.ui.components.PriceBadge
 import com.nxteam.nxstore.ui.components.SourceBadge
 import com.nxteam.nxstore.ui.theme.NxSurfaceVariant
 import com.nxteam.nxstore.util.Format
+import com.nxteam.nxstore.util.HtmlText
 
 @Composable
 fun DetailScreen(
@@ -162,7 +163,11 @@ fun DetailScreen(
                     Spacer(Modifier.height(20.dp))
                     Text("About", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onBackground)
                     Spacer(Modifier.height(8.dp))
-                    Text(app.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        text = HtmlText.toAnnotated(app.description),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
                 Spacer(Modifier.height(40.dp))
             }

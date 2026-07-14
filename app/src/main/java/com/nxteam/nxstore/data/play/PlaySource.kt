@@ -27,6 +27,12 @@ object PlaySource {
         parseSearch(Jsoup.parse(html, BASE), limit)
     }
 
+    suspend fun topCharts(limit: Int = 40): List<AppItem> = withContext(Dispatchers.IO) {
+        val html = runCatching { Http.getString("$BASE/store/apps?hl=en&gl=US") }.getOrNull()
+            ?: return@withContext emptyList()
+        parseSearch(Jsoup.parse(html, BASE), limit)
+    }
+
     private fun parseSearch(doc: Document, limit: Int): List<AppItem> {
         val out = LinkedHashMap<String, AppItem>()
         for (anchor in doc.select("a[href*='/store/apps/details?id=']")) {
