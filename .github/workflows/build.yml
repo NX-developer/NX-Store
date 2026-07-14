@@ -1,0 +1,72 @@
+name: Build NX Store APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Build debug and release APKs
+        id: build
+        run: |
+          set -o pipefail
+          gradle assembleDebug assembleRelease --no-daemon --stacktrace 2>&1 | tee build.log
+
+      - name: Report APK sizes
+        if: success()
+        run: |
+          echo "Debug:   $(du -h app/build/outputs/apk/debug/app-debug.apk | cut -f1)"
+          echo "Release: $(du -h app/build/outputs/apk/release/app-release-unsigned.apk | cut -f1)"
+
+      - name: Upload debug APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nx-store-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload release APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nx-store-release-apk
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+
+      - name: Prepare error report
+        if: failure()
+        run: cp build.log error.txt || echo "no build log" > error.txt
+
+      - name: Upload error report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error
+          path: error.txt
