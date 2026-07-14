@@ -10,13 +10,18 @@ data class AppItem(
     val category: String = "",
     val versionName: String = "",
     val rating: Double? = null,
+    val ratingCount: Long? = null,
+    val downloads: Long? = null,
+    val downloadsLabel: String = "",
     val sizeBytes: Long? = null,
     val isPaid: Boolean = false,
     val priceLabel: String = "",
     val source: Source,
     val downloadUrl: String? = null,
     val storeUrl: String = "",
-    val screenshots: List<String> = emptyList()
+    val screenshots: List<String> = emptyList(),
+    val videoUrl: String? = null,
+    val enriched: Boolean = false
 ) {
     val id: String get() = "${source.name}:$packageName"
     val installable: Boolean get() = !isPaid && !downloadUrl.isNullOrBlank()

@@ -114,6 +114,8 @@ fun DetailScreen(
                 )
 
                 val meta = buildList {
+                    app.rating?.let { add(String.format(java.util.Locale.US, "★ %.1f", it)) }
+                    if (app.downloadsLabel.isNotBlank()) add("${app.downloadsLabel} downloads")
                     if (app.versionName.isNotBlank()) add("v${app.versionName}")
                     Format.size(app.sizeBytes).takeIf { it.isNotBlank() }?.let { add(it) }
                     if (app.category.isNotBlank()) add(app.category)
@@ -121,6 +123,23 @@ fun DetailScreen(
                 if (meta.isNotBlank()) {
                     Spacer(Modifier.height(16.dp))
                     Text(meta, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+
+                app.videoUrl?.let { video ->
+                    Spacer(Modifier.height(16.dp))
+                    Button(
+                        onClick = {
+                            runCatching {
+                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(video)))
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Text("Watch trailer", color = MaterialTheme.colorScheme.onBackground)
+                    }
                 }
 
                 if (app.screenshots.isNotEmpty()) {

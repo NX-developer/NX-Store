@@ -12,6 +12,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -96,9 +100,38 @@ fun AppRow(item: AppItem, onClick: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 SourceBadge(item.source)
                 PriceBadge(item)
+                item.rating?.let { value ->
+                    Icon(
+                        Icons.Default.Star,
+                        contentDescription = null,
+                        tint = NxPaid,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = String.format(java.util.Locale.US, "%.1f", value),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (item.downloadsLabel.isNotBlank()) {
+                    Icon(
+                        Icons.Default.Download,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = item.downloadsLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
